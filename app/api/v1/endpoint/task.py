@@ -1,5 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.schemas.tasks import TaskCreate, TaskResponse
+from app.database import get_db
+from app.models.task import Task
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 results = []
@@ -17,14 +20,15 @@ def counter():
 
 # create tasks
 @router.post("/", response_model=TaskResponse, status_code=201)
-def create_task(data: TaskCreate):
-    new_task = {
-        "id": counter(),
-        "completed": False,
-        "title": data.title,
-        "description": data.description,
-    }
-    results.append(new_task)
+def create_task(data: TaskCreate, db: Session = Depends(get_db)):
+    new_task = Task(
+        completed=False,
+        title=data.title,
+        description=data.description,
+    )
+    db.add(new_task) #Adds the new ORM object to the session. SQLAlchemy tracks it as a new object to be inserted.
+    db.commit() #Commits the transaction. SQLAlchemy flushes pending changes before committing, so the new task is inserted into PostgreSQL.
+    db.refresh(new_task) #Reloads the object's values from the database. #For example, after the insert, new_task.id will contain the generated ID.
     return new_task
 
 
