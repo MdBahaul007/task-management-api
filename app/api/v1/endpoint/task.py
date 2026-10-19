@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from app.schemas.tasks import TaskCreate, TaskResponse
 from app.database import get_db
 from app.models.task import Task
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from typing import Literal
 
 router = APIRouter()
 
@@ -28,12 +29,47 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
 
 # get all tasks
 @router.get("/", response_model=list[TaskResponse])
-def get_all_tasks(db: Session = Depends(get_db)):  # db is your SQLAlchemy session.
-    statement = select(Task)  # Select(Task) = SELECT * FROM tasks;
+def get_all_tasks(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=10, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    completed: bool | None = Query(default=None),
+    search: str | None = Query(default=None, min_length=1, max_length=30),
+    sortby: Literal["id", "title"] = Query(default="id"),
+    orderby: Literal["asc", "desc"] = Query(default="asc"),
+    # db is your SQLAlchemy session.
+):
+    # if completed is not None:
+    #     statement = select(Task).where(Task.completed == completed).order_by(Task.id)
+    # else:
+    #     statement = select(Task).order_by(Task.id)
+    # same way above commented code can be done as
+
+    # statement = select(Task).order_by(Task.id)  # base query
+    statement = select(Task)  # base query
+
+    if completed is not None:
+        statement = statement.where(Task.completed == completed)
+    if search is not None:
+        statement = statement.where(Task.title.ilike(f"%{search}%"))
+    if sortby == "title":
+        sort_col = Task.title
+    else:
+        sort_col = Task.id
+
+    if orderby == "desc":
+        statement = statement.order_by(sort_col.desc())
+    else:
+        statement = statement.order_by(sort_col.asc())
+
     task = db.scalars(
-        statement
-    ).all()  # scalars() extracts the Task objects from the query results. .all() method always returns a list, even if the query matches only one record.
+        statement.limit(limit).offset(offset)
+    ).all()  # it executes the query
     return task
+
+
+# Select(Task) = SELECT * FROM tasks; #it only build the query
+# scalars() extracts the Task objects from the query results. .all() method always returns a list, even if the query matches only one record.
 
 
 # get task by id
