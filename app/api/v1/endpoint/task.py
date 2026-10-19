@@ -3,19 +3,9 @@ from app.schemas.tasks import TaskCreate, TaskResponse
 from app.database import get_db
 from app.models.task import Task
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 router = APIRouter()
-results = []
-
-initial_value: int = 1
-
-
-def counter():
-    global initial_value
-    current_id = initial_value
-    initial_value += 1
-
-    return current_id
 
 
 # create tasks
@@ -26,28 +16,41 @@ def create_task(data: TaskCreate, db: Session = Depends(get_db)):
         title=data.title,
         description=data.description,
     )
-    db.add(new_task) #Adds the new ORM object to the session. SQLAlchemy tracks it as a new object to be inserted.
-    db.commit() #Commits the transaction. SQLAlchemy flushes pending changes before committing, so the new task is inserted into PostgreSQL.
-    db.refresh(new_task) #Reloads the object's values from the database. #For example, after the insert, new_task.id will contain the generated ID.
+    db.add(
+        new_task
+    )  # Adds the new ORM object to the session. SQLAlchemy tracks it as a new object to be inserted.
+    db.commit()  # Commits the transaction. SQLAlchemy flushes pending changes before committing, so the new task is inserted into PostgreSQL.
+    db.refresh(
+        new_task
+    )  # Reloads the object's values from the database. #For example, after the insert, new_task.id will contain the generated ID.
     return new_task
 
 
 # get all tasks
-@router.get("/", response_model=list[TaskCreate])
-def get_all_tasks():
-    return results
+@router.get("/", response_model=list[TaskResponse])
+def get_all_tasks(db: Session = Depends(get_db)):  # db is your SQLAlchemy session.
+    statement = select(Task)  # Select(Task) = SELECT * FROM tasks;
+    task = db.scalars(
+        statement
+    ).all()  # scalars() extracts the Task objects from the query results. .all() method always returns a list, even if the query matches only one record.
+    return task
 
 
 # get task by id
 @router.get("/{task_id}", response_model=TaskResponse)
-def get_task_by_id(task_id: int):
+def get_task_by_id(task_id: int, db: Session = Depends(get_db)):
     # filtered_obj = [obj for obj in results if obj["id"] == task_id] -- to return as array
     # to return just obj
-    filtered_obj = next((obj for obj in results if obj["id"] == task_id), None)
-    if not filtered_obj:
+    # filtered_obj = next((obj for obj in results if obj["id"] == task_id), None)
+    statement = select(Task).where(Task.id == task_id)
+    filtered_obj = db.scalars(
+        statement
+    ).one_or_none()  # one_or_none() - If a matching task exists, it returns the Task object not list else return none.
+    if filtered_obj is None:
         raise HTTPException(
             status_code=404, detail=f"No task found with this task id {task_id}"
         )
+
     return filtered_obj
 
 
@@ -55,25 +58,31 @@ def get_task_by_id(task_id: int):
 
 
 @router.put("/{task_id}", response_model=TaskResponse)
-def update_task(task_id: int, updatedData: TaskCreate):
-    filtered_obj = next((obj for obj in results if obj["id"] == task_id), None)
-    if not filtered_obj:
+def update_task(task_id: int, updatedData: TaskCreate, db: Session = Depends(get_db)):
+    # filtered_obj = next((obj for obj in results if obj["id"] == task_id), None)
+    statement = select(Task).where(Task.id == task_id)
+    filtered_obj = db.scalars(statement).one_or_none()
+    if filtered_obj is None:
         raise HTTPException(
             status_code=404, detail=f"No task found with this task id {task_id}"
         )
-    filtered_obj["title"] = updatedData.title
-    filtered_obj["description"] = updatedData.description
+    filtered_obj.title = updatedData.title
+    filtered_obj.description = updatedData.description
+    db.commit()
+    db.refresh(filtered_obj)
     return filtered_obj
 
 
 @router.delete("/{task_id}")
-def delete_task(task_id: int):
-    filtered_obj = next((obj for obj in results if obj["id"] == task_id), None)
-    if not filtered_obj:
+def delete_task(task_id: int, db: Session = Depends(get_db)):
+    statement = select(Task).where(Task.id == task_id)
+    filtered_obj = db.scalars(statement).one_or_none()
+    if filtered_obj is None:
         raise HTTPException(
             status_code=404, detail=f"No task found with this task id {task_id}"
         )
-    results.remove(filtered_obj)
+    db.delete(filtered_obj)
+    db.commit()
     return {
         "status": 200,
         "message": f"Successfully deleted the task by id {task_id}",
