@@ -81,11 +81,15 @@ def get_all_tasks(
 
 # get task by id
 @router.get("/{task_id}", response_model=TaskResponse)
-def get_task_by_id(task_id: int, db: Session = Depends(get_db)):
+def get_task_by_id(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     # filtered_obj = [obj for obj in results if obj["id"] == task_id] -- to return as array
     # to return just obj
     # filtered_obj = next((obj for obj in results if obj["id"] == task_id), None)
-    statement = select(Task).where(Task.id == task_id)
+    statement = select(Task).where(Task.id == task_id, current_user.id == Task.user_id)
     filtered_obj = db.scalars(
         statement
     ).one_or_none()  # one_or_none() - If a matching task exists, it returns the Task object not list else return none.
@@ -98,12 +102,15 @@ def get_task_by_id(task_id: int, db: Session = Depends(get_db)):
 
 
 # update the task
-
-
 @router.put("/{task_id}", response_model=TaskResponse)
-def update_task(task_id: int, updatedData: TaskCreate, db: Session = Depends(get_db)):
+def update_task(
+    task_id: int,
+    updatedData: TaskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     # filtered_obj = next((obj for obj in results if obj["id"] == task_id), None)
-    statement = select(Task).where(Task.id == task_id)
+    statement = select(Task).where(Task.id == task_id, current_user.id == Task.user_id)
     filtered_obj = db.scalars(statement).one_or_none()
     if filtered_obj is None:
         raise HTTPException(
@@ -117,8 +124,12 @@ def update_task(task_id: int, updatedData: TaskCreate, db: Session = Depends(get
 
 
 @router.delete("/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_db)):
-    statement = select(Task).where(Task.id == task_id)
+def delete_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    statement = select(Task).where(Task.id == task_id, current_user.id == Task.user_id)
     filtered_obj = db.scalars(statement).one_or_none()
     if filtered_obj is None:
         raise HTTPException(
