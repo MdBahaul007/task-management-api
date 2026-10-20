@@ -2,20 +2,27 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from app.schemas.tasks import TaskCreate, TaskResponse
 from app.database import get_db
 from app.models.task import Task
+from app.models.user import User
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from typing import Literal
+from app.api.dependencies import get_current_user
 
 router = APIRouter()
 
 
 # create tasks
 @router.post("/", response_model=TaskResponse, status_code=201)
-def create_task(data: TaskCreate, db: Session = Depends(get_db)):
+def create_task(
+    data: TaskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     new_task = Task(
         completed=False,
         title=data.title,
         description=data.description,
+        user_id=current_user.id,
     )
     db.add(
         new_task
@@ -37,6 +44,7 @@ def get_all_tasks(
     search: str | None = Query(default=None, min_length=1, max_length=30),
     sortby: Literal["id", "title"] = Query(default="id"),
     orderby: Literal["asc", "desc"] = Query(default="asc"),
+    current_user: User = Depends(get_current_user),
     # db is your SQLAlchemy session.
 ):
     # if completed is not None:
@@ -46,8 +54,7 @@ def get_all_tasks(
     # same way above commented code can be done as
 
     # statement = select(Task).order_by(Task.id)  # base query
-    statement = select(Task)  # base query
-
+    statement = select(Task).where(Task.user_id == current_user.id)  # base querys
     if completed is not None:
         statement = statement.where(Task.completed == completed)
     if search is not None:
