@@ -1,4 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
+from app.core.response import success_response
+from app.schemas.common import APIResponse
 from app.schemas.tasks import TaskCreate, TaskResponse
 from app.database import get_db
 from app.models.task import Task
@@ -12,7 +14,7 @@ router = APIRouter()
 
 
 # create tasks
-@router.post("/", response_model=TaskResponse, status_code=201)
+@router.post("/", response_model=APIResponse[TaskResponse], status_code=201)
 def create_task(
     data: TaskCreate,
     db: Session = Depends(get_db),
@@ -24,18 +26,27 @@ def create_task(
         description=data.description,
         user_id=current_user.id,
     )
-    db.add(
-        new_task
-    )  # Adds the new ORM object to the session. SQLAlchemy tracks it as a new object to be inserted.
-    db.commit()  # Commits the transaction. SQLAlchemy flushes pending changes before committing, so the new task is inserted into PostgreSQL.
-    db.refresh(
-        new_task
-    )  # Reloads the object's values from the database. #For example, after the insert, new_task.id will contain the generated ID.
-    return new_task
+
+    try:
+        db.add(
+            new_task
+        )  # Adds the new ORM object to the session. SQLAlchemy tracks it as a new object to be inserted.
+        db.commit()  # Commits the transaction. SQLAlchemy flushes pending changes before committing, so the new task is inserted into PostgreSQL.
+        db.refresh(
+            new_task
+        )  # Reloads the object's values from the database. #For example, after the insert, new_task.id will contain the generated ID.
+    except Exception:
+        db.rollback()
+        raise
+
+    return success_response(
+        message="Task created successfully",
+        data=TaskResponse.model_validate(new_task),
+    )
 
 
 # get all tasks
-@router.get("/", response_model=list[TaskResponse])
+@router.get("/", response_model=APIResponse[list[TaskResponse]])
 def get_all_tasks(
     db: Session = Depends(get_db),
     limit: int = Query(default=10, ge=1, le=100),
@@ -69,10 +80,14 @@ def get_all_tasks(
     else:
         statement = statement.order_by(sort_col.asc())
 
-    task = db.scalars(
+    tasks_list = db.scalars(
         statement.limit(limit).offset(offset)
     ).all()  # it executes the query
-    return task
+    return success_response(
+        message="Successfully retrieved all the tasks",
+        data=[TaskResponse.model_validate(item) for item in tasks_list],
+        # model_validate validate one object at a time so if you have list iterate over it as above.
+    )
 
 
 # Select(Task) = SELECT * FROM tasks; #it only build the query
@@ -80,7 +95,7 @@ def get_all_tasks(
 
 
 # get task by id
-@router.get("/{task_id}", response_model=TaskResponse)
+@router.get("/{task_id}", response_model=APIResponse[TaskResponse])
 def get_task_by_id(
     task_id: int,
     db: Session = Depends(get_db),
@@ -98,11 +113,16 @@ def get_task_by_id(
             status_code=404, detail=f"No task found with this task id {task_id}"
         )
 
-    return filtered_obj
+    return success_response(
+        "Task retrieved successfully",
+        data=TaskResponse.model_validate(filtered_obj),
+        # TaskResponse.model_validate(filtered_obj)	Converts and validates the database object so basically model_validate() works on the data you received from the database
+        # response_model=APIResponse[TaskResponse]	Defines the expected overall API response structure so basically response_model defines the structure of the response your API sends to the client.
+    )
 
 
 # update the task
-@router.put("/{task_id}", response_model=TaskResponse)
+@router.put("/{task_id}", response_model=APIResponse[TaskResponse])
 def update_task(
     task_id: int,
     updatedData: TaskCreate,
@@ -118,12 +138,19 @@ def update_task(
         )
     filtered_obj.title = updatedData.title
     filtered_obj.description = updatedData.description
-    db.commit()
-    db.refresh(filtered_obj)
-    return filtered_obj
+    try:
+        db.commit()
+        db.refresh(filtered_obj)
+    except Exception:
+        db.rollback()
+        raise
+    return success_response(
+        message="Successfully updated the task",
+        data=TaskResponse.model_validate(filtered_obj),
+    )
 
 
-@router.delete("/{task_id}")
+@router.delete("/{task_id}", response_model=APIResponse[None])
 def delete_task(
     task_id: int,
     db: Session = Depends(get_db),
@@ -135,9 +162,13 @@ def delete_task(
         raise HTTPException(
             status_code=404, detail=f"No task found with this task id {task_id}"
         )
-    db.delete(filtered_obj)
-    db.commit()
-    return {
-        "status": 200,
-        "message": f"Successfully deleted the task by id {task_id}",
-    }
+
+    try:
+        db.delete(filtered_obj)
+        db.commit()
+    except:
+        db.rollback()
+
+    return success_response(
+        message=f"Successfully deleted the task by id {task_id}",
+    )

@@ -10,3 +10,6 @@ class Task(Base):
     description: Mapped[str] = mapped_column(String(1000))
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    priority: Mapped[str] = mapped_column(
+        String, server_default="medium", default="medium", nullable=False
+    )
